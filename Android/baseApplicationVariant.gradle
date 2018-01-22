@@ -1,0 +1,117 @@
+android {
+//	指定编译工具链
+	compileSdkVersion rootProject.ext.compileSdkVersion
+	buildToolsVersion rootProject.ext.buildToolsVersion
+	def buildTime = buildTime()
+	def apkPrefix = "Yunnex-"
+	defaultConfig {
+		minSdkVersion 19
+		targetSdkVersion 23
+		flavorDimensions "yunnex"
+	}
+//渠道自动标示
+	productFlavors.all {
+		flavor ->
+			flavor.manifestPlaceholders = [CHANNEL_VALUE: name]
+			flavor.versionName = "${android.defaultConfig.versionName}.${name}"
+	}
+//	release签名
+	signingConfigs {
+		release {
+			storeFile file(rootProject.ext.storeFilePath)
+			storePassword rootProject.ext.storePassword
+			keyAlias rootProject.ext.keyAlias
+			keyPassword rootProject.ext.keyPassword
+		}
+	}
+
+	buildTypes {
+//		release版本自动拷贝到out目录
+		release {
+			minifyEnabled false
+			proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+			signingConfig signingConfigs.release
+			zipAlignEnabled true
+			debuggable false
+			shrinkResources false
+			applicationVariants.all {variant ->
+				variant.outputs.all {output ->
+					if (variant.buildType.name.equals("release",) && output.outputFile != null && output.outputFile.name.endsWith('.apk'))
+					{
+						def name = new StringBuffer(output.outputFile.name)
+						name.insert(0, apkPrefix)
+						name.insert(name.size() - 4, "-${buildTime}")
+						outputFileName = name.toString()
+					}
+				}
+			}
+		}
+		debug {
+			minifyEnabled false
+			signingConfig signingConfigs.release
+			versionNameSuffix "-debug"
+		}
+	}
+
+	lintOptions {
+		abortOnError false
+		disable 'MissingTranslation'
+	}
+//compiler:java 7
+	compileOptions {
+		sourceCompatibility JavaVersion.VERSION_1_7
+		targetCompatibility JavaVersion.VERSION_1_7
+	}
+//copy Mapping.txt
+	applicationVariants.all {variant ->
+		variant.assemble.doLast {
+			if (variant.buildType.name.equals("release",))
+			{
+				def path = getAppPath(project.property('yunnex_app_type'), project.property('yunnex_app_path'))
+				def projectName ="${apkPrefix}${project.name}"
+				variant.outputs.all {output ->
+					if (variant.buildType.name.equals("release",) && output.outputFile != null && output.outputFile.name.endsWith('.apk'))
+					{
+						//copy apk
+						def copyApktask = project.tasks.create("copyApk${variant.name}", Copy)
+						logger.warn(copyApktask.name + ":" + output.outputFile.toString())
+						copyApktask.from(output.outputFile.getParentFile())
+						def tempapk = "${path}/${projectName}/${variant.versionName}-${buildTime}/"
+						logger.warn(tempapk)
+						copyApktask.into(tempapk)
+						copyApktask.include(outputFileName)
+						copyApktask.dependsOn variant.assemble
+						copyApktask.execute()
+					}
+				}
+				//copy mapping
+				if (variant.getBuildType().isMinifyEnabled() && variant.mappingFile != null)
+				{
+					def task = project.tasks.create("copyMapping${variant.name}", Copy)
+					logger.warn(task.name + ":" + variant.mappingFile.toString())
+					task.from(variant.mappingFile.getParentFile())
+					def temp = "${path}/${projectName}/${variant.versionName}-${buildTime}/mapping"
+					logger.warn(temp)
+					task.into(temp)
+					task.dependsOn variant.assemble
+					task.execute()
+				}
+				//copy so 文件
+				def copyJniLibTask = project.tasks.create("copyJniLib${variant.name}", Copy)
+				def jniLibDir = file("${buildDir}/intermediates/transforms/mergeJniLibs/${variant.flavorName}/release/folders/2000/1f/main/lib")
+				logger.warn(copyJniLibTask.name + ":" + jniLibDir.toString())
+				copyJniLibTask.from(jniLibDir)
+				def copyJniLibDir = "${path}/${projectName}/${variant.versionName}-${buildTime}"
+				logger.warn(copyJniLibDir)
+				copyJniLibTask.into(copyJniLibDir).include('armeabi/**').include('armeabi-v7a/**')
+				copyJniLibTask.dependsOn variant.assemble
+				copyJniLibTask.execute()
+			}
+		}
+	}
+
+}
+
+clean.doFirst {
+	delete getAppPath(project.property('yunnex_app_type'), project.property('yunnex_app_path'))+"/${project.name}"
+}
