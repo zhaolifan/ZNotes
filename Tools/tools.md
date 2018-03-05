@@ -12,3 +12,9 @@
 
 ## 杂项
 * [markdown语法](https://github.com/guodongxiaren/README "markdown语法")
+* smart git checkout
+```
+  git -c core.quotepath=false stash save 
+  git -c core.quotepath=false checkout dev 
+  git -c core.quotepath=false stash pop 
+```
